@@ -64,6 +64,7 @@ def evaluate(
     header = "Test:"
 
     for samples, targets, *_ in metric_logger.log_every(data_loader, 10, header):
+        # print(samples.shape, targets)
         outputs = model(samples.to(device))
         targets = targets.to(device)
 
@@ -144,3 +145,4 @@ def extract_features_with_dataloader(model, data_loader, sample_count, gather_on
     assert torch.all(all_labels > -1)
 
     return features, all_labels
+

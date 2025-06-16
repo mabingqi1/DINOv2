@@ -31,7 +31,7 @@ class ExtendedVisionDataset(VisionDataset):
 
         if self.transforms is not None:
             image, target = self.transforms(image, target)
-
+            
         return image, target
 
     def __len__(self) -> int:

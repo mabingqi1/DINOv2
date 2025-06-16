@@ -8,6 +8,7 @@ from enum import Enum
 import logging
 import os
 from typing import Callable, List, Optional, Tuple, Union
+import tqdm
 
 import numpy as np
 
@@ -200,6 +201,7 @@ class ImageNet(ExtendedVisionDataset):
             dataset_root = os.path.join(self.root, split.get_dirname())
             dataset = ImageFolder(dataset_root)
             sample_count = len(dataset)
+            print("sample_count ", sample_count)
             max_class_id_length, max_class_name_length = -1, -1
             for sample in dataset.samples:
                 _, class_index = sample
@@ -234,7 +236,7 @@ class ImageNet(ExtendedVisionDataset):
 
             assert dataset
             old_percent = -1
-            for index in range(sample_count):
+            for index in tqdm.tqdm(range(sample_count)):
                 percent = 100 * (index + 1) // sample_count
                 if percent > old_percent:
                     logger.info(f"creating entries: {percent}%")

@@ -10,7 +10,7 @@ from typing import Any, Callable, List, Optional, TypeVar
 import torch
 from torch.utils.data import Sampler
 
-from .datasets import ImageNet, ImageNet22k
+from .datasets import ImageNet, ImageNet22k, YHNpyDataset
 from .samplers import EpochSampler, InfiniteSampler, ShardedInfiniteSampler
 
 
@@ -68,7 +68,7 @@ def make_dataset(
     *,
     dataset_str: str,
     transform: Optional[Callable] = None,
-    target_transform: Optional[Callable] = None,
+    # target_transform: Optional[Callable] = None,
 ):
     """
     Creates a dataset with the specified parameters.
@@ -82,17 +82,25 @@ def make_dataset(
         The created dataset.
     """
     logger.info(f'using dataset: "{dataset_str}"')
-
-    class_, kwargs = _parse_dataset_str(dataset_str)
-    dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
+    
+    if dataset_str.endswith('.json'):
+        dataset = YHNpyDataset(
+            data_path=dataset_str,
+            transform=transform
+        )
+    else:
+        class_, kwargs = _parse_dataset_str(dataset_str)
+        dataset = class_(transform=transform, 
+                        #  target_transform=target_transform, 
+                        **kwargs)
 
     logger.info(f"# of dataset samples: {len(dataset):,d}")
 
     # Aggregated datasets do not expose (yet) these attributes, so add them.
     if not hasattr(dataset, "transform"):
         setattr(dataset, "transform", transform)
-    if not hasattr(dataset, "target_transform"):
-        setattr(dataset, "target_transform", target_transform)
+    # if not hasattr(dataset, "target_transform"):
+    #     setattr(dataset, "target_transform", target_transform)
 
     return dataset
 

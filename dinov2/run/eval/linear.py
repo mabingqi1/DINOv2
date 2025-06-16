@@ -22,23 +22,23 @@ class Evaluator:
     def __call__(self):
         from dinov2.eval.linear import main as linear_main
 
-        self._setup_args()
+        # self._setup_args()
         linear_main(self.args)
 
-    def checkpoint(self):
-        import submitit
+    # def checkpoint(self):
+    #     import submitit
 
-        logger.info(f"Requeuing {self.args}")
-        empty = type(self)(self.args)
-        return submitit.helpers.DelayedSubmission(empty)
+    #     logger.info(f"Requeuing {self.args}")
+    #     empty = type(self)(self.args)
+    #     return submitit.helpers.DelayedSubmission(empty)
 
-    def _setup_args(self):
-        import submitit
+    # def _setup_args(self):
+    #     import submitit
 
-        job_env = submitit.JobEnvironment()
-        self.args.output_dir = self.args.output_dir.replace("%j", str(job_env.job_id))
-        logger.info(f"Process group: {job_env.num_tasks} tasks, rank: {job_env.global_rank}")
-        logger.info(f"Args: {self.args}")
+    #     job_env = submitit.JobEnvironment()
+    #     self.args.output_dir = self.args.output_dir.replace("%j", str(job_env.job_id))
+    #     logger.info(f"Process group: {job_env.num_tasks} tasks, rank: {job_env.global_rank}")
+    #     logger.info(f"Args: {self.args}")
 
 
 def main():
@@ -51,7 +51,10 @@ def main():
     setup_logging()
 
     assert os.path.exists(args.config_file), "Configuration file does not exist!"
-    submit_jobs(Evaluator, args, name="dinov2:linear")
+
+    # submit_jobs(Evaluator, args, name="dinov2:linear")
+    evaluator = Evaluator(args)
+    evaluator()
     return 0
 
 

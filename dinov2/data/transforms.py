@@ -7,7 +7,11 @@ from typing import Sequence
 
 import torch
 from torchvision import transforms
+from monai import transforms as mntransforms
+import random
+import math
 
+from monai.transforms import Transform
 
 class GaussianBlur(transforms.RandomApply):
     """
@@ -89,3 +93,85 @@ def make_classification_eval_transform(
         make_normalize_transform(mean=mean, std=std),
     ]
     return transforms.Compose(transforms_list)
+
+
+class ZscoreNormWithOptionClip(mntransforms.MapTransform):
+    """
+        Initialize clamped img with zscore.
+    """
+    def __init__(self, clip: bool, clip_min_value: int = None, clip_max_value: int = None) -> None:
+        self.clip = clip  
+        self.clip_min_value = clip_min_value
+        self.clip_max_value = clip_max_value
+    
+    def __call__(self, data: dict[torch.Tensor]) -> dict:
+        img = data
+        if self.clip:
+            img = torch.clamp(img, self.clip_min_value, self.clip_max_value)
+        mean = img.mean()
+        std = img.std()
+        img = (img - mean) / (max(std, 1e-8))
+
+        return img
+
+class RandResizedCrop(Transform):
+    def __init__(self, 
+                 size, 
+                 scale=(0.08, 1.0), 
+                 ratio=(3./4., 4./3.), 
+                 interpolation="bicubic"
+                 ):
+        """
+        模拟 torchvision 的 RandomResizedCrop，适用于单通道图像。
+        
+        参数:
+            size (int 或 tuple): 目标输出大小。
+            scale (tuple): 面积比例范围。
+            ratio (tuple): 宽高比范围。
+            interpolation (str): 插值模式（如 "bicubic"）。
+        """
+        self.size = size if isinstance(size, tuple) else (size, size)
+        self.scale = scale
+        self.ratio = ratio
+        self.interpolation = interpolation
+
+    def __call__(self, img):
+        """
+        对输入图像应用随机调整大小的裁剪。
+        
+        参数:
+            img (torch.Tensor): 形状为 (C, H, W) 的单通道张量，C=1。
+        
+        返回:
+            torch.Tensor: 调整大小后的张量，形状为 (C, size[0], size[1])。
+        """
+        C, H, W = img.shape
+        area = H * W
+        
+        # 计算随机面积比例
+        target_area = random.uniform(*self.scale) * area
+        
+        # 计算随机宽高比
+        log_ratio = torch.log(torch.tensor(self.ratio))
+        aspect_ratio = torch.exp(torch.empty(1).uniform_(log_ratio[0], log_ratio[1])).item()
+        
+        # 计算裁剪高度和宽度
+        w = int(round(math.sqrt(target_area * aspect_ratio)))
+        h = int(round(math.sqrt(target_area / aspect_ratio)))
+        
+        # 限制裁剪大小在有效范围内
+        w = min(max(w, 1), W)
+        h = min(max(h, 1), H)
+        
+        # 随机选择裁剪的起始位置
+        i = random.randint(0, H - h)
+        j = random.randint(0, W - w)
+        
+        # 裁剪图像
+        cropped = img[:, i:i+h, j:j+w]
+        
+        # 调整大小到目标尺寸
+        resized = torch.nn.functional.interpolate(cropped[None], size=self.size, mode=self.interpolation)
+        resized = resized.squeeze(0)  # 移除批次维度
+        
+        return resized

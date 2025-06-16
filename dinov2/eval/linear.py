@@ -137,8 +137,8 @@ def get_args_parser(
         val_dataset_str="ImageNet:split=VAL",
         test_dataset_strs=None,
         epochs=10,
-        batch_size=128,
-        num_workers=8,
+        batch_size=1,
+        num_workers=16,
         epoch_length=1250,
         save_checkpoint_frequency=20,
         eval_period_iterations=1250,
@@ -345,7 +345,7 @@ def eval_linear(
         header,
         max_iter,
         start_iter,
-    ):
+    ):  
         data = data.cuda(non_blocking=True)
         labels = labels.cuda(non_blocking=True)
 

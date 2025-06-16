@@ -17,7 +17,7 @@ def make_2tuple(x):
     if isinstance(x, tuple):
         assert len(x) == 2
         return x
-
+    
     assert isinstance(x, int)
     return (x, x)
 
