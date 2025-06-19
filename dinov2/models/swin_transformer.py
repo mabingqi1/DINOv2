@@ -18,151 +18,12 @@ Modifications and additions for timm hacked together by / Copyright 2021, Ross W
 import logging
 import math
 from typing import Any, Dict, Callable, List, Optional, Set, Tuple, Union
-from ...core import register
 import torch
 import torch.nn as nn
 from itertools import chain
 from timm.layers import PatchEmbed, Mlp, DropPath, ClassifierHead, to_2tuple, to_ntuple, trunc_normal_, \
-    use_fused_attn, resize_rel_pos_bias_table, resample_patch_embed, _assert
-
-def use_reentrant_ckpt() -> bool:
-    return _USE_REENTRANT_CKPT
-def feature_take_indices(
-        num_features: int,
-        indices: Optional[Union[int, List[int]]] = None,
-        as_set: bool = False,
-) -> Tuple[List[int], int]:
-    """ Determine the absolute feature indices to 'take' from.
-
-    Note: This function can be called in forward() so must be torchscript compatible,
-    which requires some incomplete typing and workaround hacks.
-
-    Args:
-        num_features: total number of features to select from
-        indices: indices to select,
-          None -> select all
-          int -> select last n
-          list/tuple of int -> return specified (-ve indices specify from end)
-        as_set: return as a set
-
-    Returns:
-        List (or set) of absolute (from beginning) indices, Maximum index
-    """
-    if indices is None:
-        indices = num_features  # all features if None
-
-    if isinstance(indices, int):
-        # convert int -> last n indices
-        _assert(0 < indices <= num_features, f'last-n ({indices}) is out of range (1 to {num_features})')
-        take_indices = [num_features - indices + i for i in range(indices)]
-    else:
-        take_indices: List[int] = []
-        for i in indices:
-            idx = num_features + i if i < 0 else i
-            _assert(0 <= idx < num_features, f'feature index {idx} is out of range (0 to {num_features - 1})')
-            take_indices.append(idx)
-
-    if not torch.jit.is_scripting() and as_set:
-        return set(take_indices), max(take_indices)
-
-    return take_indices, max(take_indices)
-def checkpoint_seq(
-        functions,
-        x,
-        every: int = 1,
-        flatten: bool = False,
-        skip_last: bool = False,
-        use_reentrant: Optional[bool] = None,
-):
-    r"""A helper function for checkpointing sequential models.
-
-    Sequential models execute a list of modules/functions in order
-    (sequentially). Therefore, we can divide such a sequence into segments
-    and checkpoint each segment. All segments except run in :func:`torch.no_grad`
-    manner, i.e., not storing the intermediate activations. The inputs of each
-    checkpointed segment will be saved for re-running the segment in the backward pass.
-
-    See :func:`~torch.utils.checkpoint.checkpoint` on how checkpointing works.
-
-    .. warning::
-        Checkpointing currently only supports :func:`torch.autograd.backward`
-        and only if its `inputs` argument is not passed. :func:`torch.autograd.grad`
-        is not supported.
-
-    .. warning:
-        At least one of the inputs needs to have :code:`requires_grad=True` if
-        grads are needed for model inputs, otherwise the checkpointed part of the
-        model won't have gradients.
-
-    Args:
-        functions: A :class:`torch.nn.Sequential` or the list of modules or functions to run sequentially.
-        x: A Tensor that is input to :attr:`functions`
-        every: checkpoint every-n functions (default: 1)
-        flatten: flatten nn.Sequential of nn.Sequentials
-        skip_last: skip checkpointing the last function in the sequence if True
-        use_reentrant: Use re-entrant checkpointing
-
-    Returns:
-        Output of running :attr:`functions` sequentially on :attr:`*inputs`
-
-    Example:
-        >>> model = nn.Sequential(...)
-        >>> input_var = checkpoint_seq(model, input_var, every=2)
-    """
-    if use_reentrant is None:
-        use_reentrant = use_reentrant_ckpt()
-
-    def run_function(start, end, functions):
-        def forward(_x):
-            for j in range(start, end + 1):
-                _x = functions[j](_x)
-            return _x
-        return forward
-
-    if isinstance(functions, torch.nn.Sequential):
-        functions = functions.children()
-    if flatten:
-        functions = chain.from_iterable(functions)
-    if not isinstance(functions, (tuple, list)):
-        functions = tuple(functions)
-
-    num_checkpointed = len(functions)
-    if skip_last:
-        num_checkpointed -= 1
-    end = -1
-    for start in range(0, num_checkpointed, every):
-        end = min(start + every - 1, num_checkpointed - 1)
-        x = torch.utils.checkpoint.checkpoint(
-            run_function(start, end, functions),
-            x,
-            use_reentrant=use_reentrant,
-        )
-    if skip_last:
-        return run_function(end + 1, len(functions) - 1, functions)(x)
-    return x
-def ndgrid(*tensors) -> Tuple[torch.Tensor, ...]:
-    """generate N-D grid in dimension order.
-
-    The ndgrid function is like meshgrid except that the order of the first two input arguments are switched.
-
-    That is, the statement
-    [X1,X2,X3] = ndgrid(x1,x2,x3)
-
-    produces the same result as
-
-    [X2,X1,X3] = meshgrid(x2,x1,x3)
-
-    This naming is based on MATLAB, the purpose is to avoid confusion due to torch's change to make
-    torch.meshgrid behaviour move from matching ndgrid ('ij') indexing to numpy meshgrid defaults of ('xy').
-
-    """
-    try:
-        return torch.meshgrid(*tensors, indexing='ij')
-    except TypeError:
-        # old PyTorch < 1.10 will follow this path as it does not have indexing arg,
-        # the old behaviour of meshgrid was 'ij'
-        return torch.meshgrid(*tensors)
-
+    use_fused_attn, resize_rel_pos_bias_table, resample_patch_embed, _assert, use_reentrant_ckpt, ndgrid
+from timm.models import feature_take_indices, checkpoint_seq
 
 __all__ = ['SwinTransformer'] 
 
@@ -458,8 +319,8 @@ class SwinTransformer(nn.Module):
             img_size: _int_or_tuple_2_t = 224,
             patch_size: int = 4,
             in_chans: int = 3,
-            num_classes: int = 1000,
-            global_pool: str = 'avg',
+            # num_classes: int = 1000,
+            # global_pool: str = 'avg',
             embed_dim: int = 96,
             depths: Tuple[int, ...] = (2, 2, 6, 2),
             num_heads: Tuple[int, ...] = (3, 6, 12, 24),
@@ -476,9 +337,9 @@ class SwinTransformer(nn.Module):
             **kwargs,
     ):
         super().__init__()
-        self.num_classes = num_classes
-        self.global_pool = global_pool
-        self.output_fmt = 'NHWC'
+        # self.num_classes = num_classes
+        # self.global_pool = global_pool
+        # self.output_fmt = 'NHWC'
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
@@ -576,7 +437,6 @@ from typing import List
 # ==============================================================================
 #             封装好的、即插即用的 SwinTransformerLarge 类
 # ==============================================================================
-@register()
 class SwinTransformerLarge(nn.Module):
     """
     一个封装好的、配置固定的 Swin Transformer Backbone。

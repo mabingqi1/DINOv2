@@ -37,6 +37,12 @@ def build_model(args, only_teacher=False, img_size=256):
             drop_path_uniform=args.drop_path_uniform,
         )
         embed_dim = student.embed_dim
+    elif "swin" in args.arch:
+        swin_kwargs = dict(
+            img_size=img_size,
+            patch_size=args.patch_size,
+            in_chans=args.in_chans,
+        )
     return student, teacher, embed_dim
 
 

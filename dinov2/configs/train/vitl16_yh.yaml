@@ -11,7 +11,7 @@ evaluation:
   eval_period_iterations: 5000
 
 optim:
-  epochs: 120
+  epochs: 200
   weight_decay: 0.01
   weight_decay_end: 0.1
   base_lr: 0.002  # learning rate for a batch size of 1024
