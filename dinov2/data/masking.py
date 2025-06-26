@@ -11,16 +11,16 @@ import numpy as np
 class MaskingGenerator:
     def __init__(
         self,
-        input_size,
+        num_patchs_2d,
         num_masking_patches=None,
         min_num_patches=4,
         max_num_patches=None,
         min_aspect=0.3,
         max_aspect=None,
     ):
-        if not isinstance(input_size, tuple):
-            input_size = (input_size,) * 2
-        self.height, self.width = input_size
+        if not isinstance(num_patchs_2d, tuple):
+            num_patchs_2d = (num_patchs_2d,) * 2
+        self.height, self.width = num_patchs_2d
 
         self.num_patches = self.height * self.width
         self.num_masking_patches = num_masking_patches

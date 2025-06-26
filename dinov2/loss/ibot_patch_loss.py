@@ -99,7 +99,7 @@ class iBOTPatchLoss(nn.Module):
         t = teacher_patch_tokens
         s = student_patch_tokens
         loss = torch.sum(t * F.log_softmax(s / self.student_temp, dim=-1), dim=-1)
-        loss = torch.sum(loss * student_masks_flat.float(), dim=-1) / student_masks_flat.sum(dim=-1).clamp(min=1.0)
+        # loss = torch.sum(loss * student_masks_flat.float(), dim=-1) / student_masks_flat.sum(dim=-1).clamp(min=1.0)
         return -loss.mean()
 
     def forward_masked(

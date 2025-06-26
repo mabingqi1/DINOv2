@@ -6,6 +6,7 @@
 import logging
 
 from . import vision_transformer as vits
+from . import swin_transformer as swin
 
 
 logger = logging.getLogger("dinov2")
@@ -43,6 +44,15 @@ def build_model(args, only_teacher=False, img_size=256):
             patch_size=args.patch_size,
             in_chans=args.in_chans,
         )
+        teacher = swin.__dict__[args.arch](**swin_kwargs)
+        if only_teacher:
+            return teacher, teacher.embed_dim
+        student = swin.__dict__[args.arch](
+            drop_path_rate=args.drop_path_rate, 
+            **swin_kwargs
+        )
+        embed_dim = student.embed_dim
+        img_size = img_size
     return student, teacher, embed_dim
 
 

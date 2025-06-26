@@ -145,7 +145,7 @@ class RandResizedCrop(Transform):
         返回:
             torch.Tensor: 调整大小后的张量，形状为 (C, size[0], size[1])。
         """
-        C, H, W = img.shape
+        C, H, W= img.shape
         area = H * W
         
         # 计算随机面积比例

@@ -164,10 +164,17 @@ def do_train(cfg, model, resume=False):
     # setup data preprocessing
     img_size = cfg.crops.global_crops_size
     patch_size = cfg.student.patch_size
+    # if 'swin' in cfg.student.arch:
+    #     # n_tokens = (img_size // patch_size // 8) ** 2
+    #     mask_generator = MaskingGenerator(
+    #         num_patchs_2d=(img_size // patch_size, img_size // patch_size),
+    #         max_num_patches=0.5 * n_tokens,
+    #     )
+    # else:
     n_tokens = (img_size // patch_size) ** 2
     mask_generator = MaskingGenerator(
-        input_size=(img_size // patch_size, img_size // patch_size),
-        max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
+        num_patchs_2d=(img_size // patch_size, img_size // patch_size),
+        max_num_patches=0.5 * n_tokens,
     )
 
     data_transform = DataAugmentationDINO(

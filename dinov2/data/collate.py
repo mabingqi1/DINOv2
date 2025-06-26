@@ -8,21 +8,15 @@ import random
 
 
 def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
-    # dtype = torch.half  # TODO: Remove
-
-    # n_global_crops = len(samples_list[0][0]["global_crops"])
-    # n_local_crops = len(samples_list[0][0]["local_crops"])
     n_global_crops = len(samples_list[0]["global_crops"])
     n_local_crops = len(samples_list[0]["local_crops"])
 
-    # collated_global_crops = torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops) for s in samples_list])
-    # collated_local_crops = torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops) for s in samples_list])
     collated_global_crops = torch.stack([s["global_crops"][i] for i in range(n_global_crops) for s in samples_list])
     collated_local_crops = torch.stack([s["local_crops"][i] for i in range(n_local_crops) for s in samples_list])
 
     B = len(collated_global_crops)
-    N = n_tokens
-    n_samples_masked = int(B * mask_probability)
+    N = n_tokens # 4096
+    n_samples_masked = int(B * mask_probability) # 16*0.5=8
     probs = torch.linspace(*mask_ratio_tuple, n_samples_masked + 1)
     upperbound = 0
     masks_list = []
@@ -33,7 +27,7 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
         upperbound += int(N * prob_max)
     for i in range(n_samples_masked, B):
         masks_list.append(torch.BoolTensor(mask_generator(0)))
-
+        
     random.shuffle(masks_list)
 
     collated_masks = torch.stack(masks_list).flatten(1)

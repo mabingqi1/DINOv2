@@ -322,12 +322,9 @@ class DinoVisionTransformer(nn.Module):
             return tuple(zip(outputs, class_tokens))
         return tuple(outputs)
 
-    def forward(self, *args, is_training=False, **kwargs):
+    def forward(self, *args, **kwargs):
         ret = self.forward_features(*args, **kwargs)
-        if is_training:
-            return ret
-        else:
-            return self.head(ret["x_norm_clstoken"])
+        return ret
 
 
 def init_weights_vit_timm(module: nn.Module, name: str = ""):

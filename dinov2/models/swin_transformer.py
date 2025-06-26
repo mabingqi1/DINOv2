@@ -20,10 +20,14 @@ import math
 from typing import Any, Dict, Callable, List, Optional, Set, Tuple, Union
 import torch
 import torch.nn as nn
+from torch.nn.functional import softmax
 from itertools import chain
 from timm.layers import PatchEmbed, Mlp, DropPath, ClassifierHead, to_2tuple, to_ntuple, trunc_normal_, \
     use_fused_attn, resize_rel_pos_bias_table, resample_patch_embed, _assert, use_reentrant_ckpt, ndgrid
-from timm.models import feature_take_indices, checkpoint_seq
+from timm.models._features import feature_take_indices
+from timm.models import checkpoint_seq
+from dinov2.layers import NestedTensorBlock
+from .swin_decoder import SingleConvDecoder2D
 
 __all__ = ['SwinTransformer'] 
 
@@ -98,7 +102,7 @@ class WindowAttention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
         trunc_normal_(self.relative_position_bias_table, std=.02)
-        self.softmax = nn.Softmax(dim=-1)
+        # self.softmax = nn.Softmax(dim=-1)
 
     def _get_rel_pos_bias(self) -> torch.Tensor:
         relative_position_bias = self.relative_position_bias_table[
@@ -128,7 +132,7 @@ class WindowAttention(nn.Module):
                 num_win = mask.shape[0]
                 attn = attn.view(-1, num_win, self.num_heads, N, N) + mask.unsqueeze(1).unsqueeze(0)
                 attn = attn.view(-1, self.num_heads, N, N)
-            attn = self.softmax(attn)
+            attn = softmax(attn, dim=-1, dtype=x.dtype)
             attn = self.attn_drop(attn)
             x = attn @ v
 
@@ -291,7 +295,6 @@ class SwinTransformerStage(nn.Module):
         else:
             assert dim == out_dim
             self.downsample = nn.Identity()
-
         self.blocks = nn.Sequential(*[
             SwinTransformerBlock(
                 dim=out_dim, input_resolution=self.output_resolution,
@@ -331,18 +334,18 @@ class SwinTransformer(nn.Module):
             drop_rate: float = 0.,
             proj_drop_rate: float = 0.,
             attn_drop_rate: float = 0.,
-            drop_path_rate: float = 0.1,
+            drop_path_rate: float = 0.,
             embed_layer: Callable = PatchEmbed,
             norm_layer: Union[str, Callable] = nn.LayerNorm,
             **kwargs,
     ):
         super().__init__()
-        # self.num_classes = num_classes
-        # self.global_pool = global_pool
-        # self.output_fmt = 'NHWC'
+        self.patch_size = patch_size
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        trunc_normal_(self.mask_token, mean=0., std=.02)
         
         if not isinstance(embed_dim, (tuple, list)):
             embed_dim_list = [int(embed_dim * 2 ** i) for i in range(self.num_layers)]
@@ -379,11 +382,21 @@ class SwinTransformer(nn.Module):
         self.layers = nn.Sequential(*layers)
         
         self.norm = norm_layer(self.num_features)
-        self.head = ClassifierHead(
-            self.num_features, num_classes, pool_type=global_pool,
-            drop_rate=drop_rate, input_fmt=self.output_fmt,
-        )
-
+        self.avgpool = nn.AdaptiveAvgPool1d(1)
+        # self.decoder = SingleConvDecoder2D(encoder_embed_dim=embed_dim // 8, 
+        #                                    patch_size=patch_size,
+        #                                    in_chans=1
+        #                                    )
+    
+    def prepare_tokens_with_masks(self, x, masks=None):
+        x = self.patch_embed(x)
+        if masks is not None:
+            embed_x = x
+            x = x.reshape(x.shape[0], -1, x.shape[-1])
+            x = torch.where(masks.unsqueeze(-1), self.mask_token.to(x.dtype), x)
+            x = x.reshape(embed_x.shape)
+        return x
+    
     def forward_intermediates(
             self, x: torch.Tensor,
             indices: Optional[Union[int, List[int]]] = None,
@@ -413,184 +426,127 @@ class SwinTransformer(nn.Module):
             x = x.permute(0, 3, 1, 2).contiguous()
         return x, intermediates
 
-    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.patch_embed(x)
+    def forward_features_list(self, x_list, masks_list):
+        x = [self.prepare_tokens_with_masks(x, masks) for x, masks in zip(x_list, masks_list)]
+
+        all_x = x
+        output = []
+        for x, masks in zip(all_x, masks_list):
+            x = self.layers(x)
+            x = self.norm(x)
+            x = x.permute(0, 3, 1, 2).flatten(2) # BCHW
+            cls_x = self.avgpool(x)
+            x = torch.cat([cls_x, x], dim=-1).transpose(1, 2) # B N+1 C
+
+            output.append(
+                {
+                    "x_norm_clstoken": x[:, 0],
+                    "x_norm_patchtokens": x[:, 1:],
+                    # "x_prenorm": x,
+                    "masks": masks,
+                }
+            )
+        return output
+
+    def forward_features(self, x: torch.Tensor, masks=None) -> torch.Tensor:
+        # for student input
+        if isinstance(x, list): 
+            return self.forward_features_list(x, masks)
+        
+        x = self.prepare_tokens_with_masks(x, masks)
         x = self.layers(x)
         x = self.norm(x)
-        return x
+        
+        x = x.permute(0, 3, 1, 2).flatten(2) # BCHW
+        cls_x = self.avgpool(x)
 
-    def forward_head(self, x: torch.Tensor, pre_logits: bool = False) -> torch.Tensor:
-        return self.head(x, pre_logits=True) if pre_logits else self.head(x)
+        x = torch.cat([cls_x, x], dim=-1).transpose(1, 2) # B N+1 C
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.forward_features(x)
-        x = self.forward_head(x)
-        return x
+        return {
+            "x_norm_clstoken": x[:, 0],
+            "x_norm_patchtokens": x[:, 1:],
+            "masks": masks,
+        }
 
-# =================================================================================
-# 以下是如何根据您的需求，使用上面的类定义来配置和使用模型的示例
-# =================================================================================
+    def forward(self, *args, **kwargs) -> Dict:
+        ret = self.forward_features(*args, **kwargs)
+        return ret
 
-import torch
-import torch.nn as nn
-from typing import List
+def swin_large(img_size=256, patch_size=16, in_chans=1, num_register_tokens=0, **kwargs):
+    model = SwinTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=in_chans,
+        embed_dim=128, 
+        depths=(2, 2, 18, 2),
+        num_heads=(6, 12, 24, 48),
+        window_size=8,
+    )
+    return model
+
+
+
+# import torch
+# import torch.nn as nn
+# from typing import List
 # ==============================================================================
 #             封装好的、即插即用的 SwinTransformerLarge 类
 # ==============================================================================
-class SwinTransformerLarge(nn.Module):
-    """
-    一个封装好的、配置固定的 Swin Transformer Backbone。
+# class SwinTransformerLarge(nn.Module):
+#     """
+#     一个封装好的、配置固定的 Swin Transformer Backbone。
 
-    这个类硬编码了特定的 Swin Transformer 配置，并设计为直接输出
-    最后三个阶段的特征图，专用于作为检测模型（如RT-DETR）的主干网络。
+#     这个类硬编码了特定的 Swin Transformer 配置，并设计为直接输出
+#     最后三个阶段的特征图，专用于作为检测模型（如RT-DETR）的主干网络。
 
-    输入:
-        x (torch.Tensor): 输入图像张量，形状为 (B, 1, 512, 512)。
+#     输入:
+#         x (torch.Tensor): 输入图像张量，形状为 (B, 1, 512, 512)。
 
-    输出:
-        list[torch.Tensor]: 一个包含3个特征图张量的列表，分别对应
-                            Swin Transformer 的 Stage 1, 2, 3 的输出。
-                            - [ (B, 256, 64, 64),
-                            -   (B, 512, 32, 32),
-                            -   (B, 1024, 16, 16) ]
-    """
-    def __init__(self):
-        super().__init__()
+#     输出:
+#         list[torch.Tensor]: 一个包含3个特征图张量的列表，分别对应
+#                             Swin Transformer 的 Stage 1, 2, 3 的输出。
+#                             - [ (B, 256, 64, 64),
+#                             -   (B, 512, 32, 32),
+#                             -   (B, 1024, 16, 16) ]
+#     """
+#     def __init__(self):
+#         super().__init__()
 
-        # 1. 硬编码所有配置参数
-        model_kwargs = {
-            'embed_dim': 128,
-            'depths': (2, 2, 18, 2),
-            'num_heads': (6, 12, 24, 48),
-            'window_size': 8,
-            'img_size': (512, 512),
-            'patch_size': 4,
-            'in_chans': 1,
-            'num_classes': 0,  # 作为 backbone，不需要分类头
-        }
+#         # 1. 硬编码所有配置参数
+#         model_kwargs = {
+#             'embed_dim': 128,
+#             'depths': (2, 2, 18, 2),
+#             'num_heads': (6, 12, 24, 48),
+#             'window_size': 8,
+#             'img_size': (512, 512),
+#             'patch_size': 4,
+#             'in_chans': 1,
+#             'num_classes': 0,  # 作为 backbone，不需要分类头
+#         }
 
-        # 2. 实例化底层的 SwinTransformer 并作为成员变量
-        #    这是确保模型可训练的关键！
-        self.backbone = SwinTransformer(**model_kwargs)
+#         # 2. 实例化底层的 SwinTransformer 并作为成员变量
+#         #    这是确保模型可训练的关键！
+#         self.backbone = SwinTransformer(**model_kwargs)
         
-        # 3. 定义需要从 backbone 中抽取的特征层索引
-        #    我们需要所有层来获取最后三层
-        self.out_indices = (0, 1, 2, 3)
+#         # 3. 定义需要从 backbone 中抽取的特征层索引
+#         #    我们需要所有层来获取最后三层
+#         self.out_indices = (0, 1, 2, 3)
 
-    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
-        """
-        定义前向传播逻辑。
-        """
-        # 调用底层 backbone 的方法来获取所有中间层的特征
-        all_features = self.backbone.forward_intermediates(
-            x,
-            indices=self.out_indices,
-            intermediates_only=True,
-            output_fmt='NCHW'
-        )
+#     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
+#         """
+#         定义前向传播逻辑。
+#         """
+#         # 调用底层 backbone 的方法来获取所有中间层的特征
+#         all_features = self.backbone.forward_intermediates(
+#             x,
+#             indices=self.out_indices,
+#             intermediates_only=True,
+#             output_fmt='NCHW'
+#         )
 
-        # 根据需求，只返回最后三层的特征图
-        # all_features 是一个列表，我们对其进行切片
-        return all_features[1:]
-
-
-# ==============================================================================
-#                         如何使用这个新定义的类 (增强版)
-# ==============================================================================
-# if __name__ == '__main__':
-#     print("="*60)
-#     print(">>> 步骤1: 实例化我们新封装的 SwinTransformerLarge 模型")
-#     # 不需要传递任何参数，因为所有配置都已硬编码
-#     model = SwinTransformerLarge()
-#     print("模型实例化成功！")
-#     # print(f"模型结构:\n{model}") # 打印完整结构会很长，暂时注释掉
-#     print("="*60)
-
-
-#     # ==========================================================================
-#     #             ✅ 步骤2: 详细打印可训练参数信息 (修改部分)
-#     # ==========================================================================
-#     print("\n>>> 步骤2: 详细验证模型的可训练参数")
-    
-#     # 使用 named_parameters() 来同时获取参数名称和参数本身
-#     trainable_params_count = 0
-#     frozen_params_count = 0
-#     trainable_param_names = []
-
-#     for name, param in model.named_parameters():
-#         if param.requires_grad:
-#             # 如果参数是可训练的
-#             trainable_params_count += param.numel()
-#             trainable_param_names.append(name)
-#         else:
-#             # 如果参数是冻结的
-#             frozen_params_count += param.numel()
-
-#     total_params_count = trainable_params_count + frozen_params_count
-
-#     # 打印参数量统计
-#     print(f"模型总参数量: {total_params_count / 1e6:.2f} M")
-#     print(f"  - ✅ 可训练参数量 (Trainable): {trainable_params_count / 1e6:.2f} M")
-#     print(f"  - ❌ 冻结参数量 (Frozen):    {frozen_params_count / 1e6:.2f} M")
-
-#     # 检查模型是否确实可训练
-#     assert trainable_params_count > 0, "模型没有可训练的参数！"
-#     print("\n验证通过：模型是可训练的。")
-
-#     # 打印部分可训练参数的名称作为示例
-#     print("\n部分可训练参数的名称示例:")
-#     if len(trainable_param_names) > 10:
-#         print("  --- 模型开始部分的参数 ---")
-#         for name in trainable_param_names[:5]:
-#             print(f"    {name}")
-#         print("    ...")
-#         print("  --- 模型结束部分的参数 ---")
-#         for name in trainable_param_names[-5:]:
-#             print(f"    {name}")
-#     else: # 如果参数总数不多，就全部打印
-#         for name in trainable_param_names:
-#             print(f"    {name}")
-#     print("="*60)
-#     # ==========================================================================
-
-
-#     print("\n>>> 步骤3: 进行一次前向传播并检查输出")
-#     # 创建一个符合输入要求的虚拟输入张量
-#     # (Batch Size=2, Channels=1, Height=512, Width=512)
-#     dummy_input = torch.randn(2, 1, 512, 512)
-#     print(f"创建虚拟输入张量，形状: {dummy_input.shape}\n")
-    
-#     # 将模型设置为评估模式（如果模型中有Dropout等层，这是一个好习惯）
-#     model.eval()
-    
-#     with torch.no_grad(): # 在测试时不需要计算梯度
-#         # 直接调用模型，就像调用任何 nn.Module 一样
-#         output_features = model(dummy_input)
-
-#     print("前向传播完成！")
-#     print("="*60)
-
-
-#     print("\n>>> 步骤4: 验证输出的格式和形状是否符合预期")
-#     print(f"输出类型: {type(output_features)}")
-#     print(f"输出的特征图数量: {len(output_features)}")
-    
-#     assert isinstance(output_features, list), "输出应该是一个列表！"
-#     assert len(output_features) == 3, "应该输出3个特征图！"
-
-#     print("\n每个输出特征图的形状:")
-#     expected_shapes = [
-#         torch.Size([2, 256, 64, 64]),
-#         torch.Size([2, 512, 32, 32]),
-#         torch.Size([2, 1024, 16, 16]),
-#     ]
-#     for i, features in enumerate(output_features):
-#         print(f"  - 特征 {i+1} (来自Stage {i+1}): {features.shape}")
-#         assert features.shape == expected_shapes[i], f"第 {i+1} 个特征图形状不匹配！"
-
-#     print("\n验证通过：输出完全符合您的需求！")
-#     print("="*60)
-
+#         # 根据需求，只返回最后三层的特征图
+#         # all_features 是一个列表，我们对其进行切片
+#         return all_features[1:]
 
 ''' 
 ================================================================================
