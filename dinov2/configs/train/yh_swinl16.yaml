@@ -1,5 +1,5 @@
 train:
-  batch_size_per_gpu: 16
+  batch_size_per_gpu: 32
   dataset_path: /yinghepool/yinghe/datalist/v0.9/v0.9.1-CT-chest-ProjectX-2d.json
   output_dir: .
   saveckp_freq: 20

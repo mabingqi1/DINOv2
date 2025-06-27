@@ -1,17 +1,17 @@
 train:
-  batch_size_per_gpu: 8
+  batch_size_per_gpu: 24
   dataset_path: /yinghepool/yinghe/datalist/v0.9/v0.9.1-CT-chest-ProjectX-2d.json
   output_dir: .
   saveckp_freq: 20
   seed: 0
-  num_workers: 24
+  num_workers: 16
   OFFICIAL_EPOCH_LENGTH: 1000
 
 evaluation:
   eval_period_iterations: 5000
 
 optim:
-  epochs: 200
+  epochs: 400
   weight_decay: 0.01
   weight_decay_end: 0.1
   base_lr: 0.002  # learning rate for a batch size of 1024
@@ -62,7 +62,7 @@ dino:
   head_n_prototypes: 65536
   koleo_loss_weight: 0.1
 ibot:
-  separate_head: false
+  separate_head: true
   loss_weight: 1.0
   mask_sample_probability: 0.5
   mask_ratio_min_max:
