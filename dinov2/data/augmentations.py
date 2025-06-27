@@ -101,7 +101,7 @@ class DataAugmentationDINO(object):
         # MONAI geometric augmentation for local crops
         self.geometric_augmentation_local = mntransforms.Compose(
             [
-                RandResizedCrop(size=global_crops_size, 
+                RandResizedCrop(size=local_crops_size, 
                                 scale=self.local_crops_scale, 
                                 interpolation="bicubic"
                                 ),
