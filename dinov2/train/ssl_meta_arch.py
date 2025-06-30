@@ -283,9 +283,9 @@ class SSLMetaArch(nn.Module):
             _dim = student_global_backbone_output_dict["x_norm_clstoken"].shape[-1]
             ibot_student_patch_tokens = student_global_backbone_output_dict["x_norm_patchtokens"]
             buffer_tensor_patch_tokens = ibot_student_patch_tokens.new_zeros(upperbound, _dim)
-            # buffer_tensor_patch_tokens[:n_masked_patches].copy_(
-            #     torch.index_select(ibot_student_patch_tokens.flatten(0, 1), dim=0, index=mask_indices_list)
-            # )
+            buffer_tensor_patch_tokens[:n_masked_patches].copy_(
+                torch.index_select(ibot_student_patch_tokens.flatten(0, 1), dim=0, index=mask_indices_list)
+            )
             if not self.ibot_separate_head:
                 inputs_for_student_head_list.append(buffer_tensor_patch_tokens.unsqueeze(0))
             else:

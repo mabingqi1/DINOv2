@@ -7,7 +7,7 @@
 export PYTHONPATH=.
 # export CUDA_VISIBLE_DEVICES=3
 torchrun --nproc_per_node=8 --master_port=29503 dinov2/train/train.py  \
-    --config-file dinov2/configs/train/vitl16_yh.yaml \
-    --output-dir "./output_dir/yh_vitl16-1152_20250627" \
+    --config-file dinov2/configs/train/vitb16_yh.yaml \
+    --output-dir "./output_dir/yh_vitb16_20250630" \
     # train.dataset_path=ImageNet:split=TRAIN:root="/yinghepool/yinghe/Public_data/ImageNet1K":extra="/yinghepool/yinghe/Public_data/ImageNet1K/metadata"
     # --config-file dinov2/configs/train/vitl16_yh.yaml \

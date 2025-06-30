@@ -1,5 +1,5 @@
 train:
-  batch_size_per_gpu: 8
+  batch_size_per_gpu: 32
   dataset_path: /yinghepool/yinghe/datalist/v0.9/v0.9.1-CT-chest-ProjectX-2d.json
   output_dir: .
   saveckp_freq: 20
@@ -30,7 +30,7 @@ crops:
   - 0.8
   - 1.0
   local_crops_size: 160
-  local_crops_number: 6
+  local_crops_number: 8
   local_crops_scale:
   - 0.2
   - 0.5
@@ -38,7 +38,7 @@ crops:
 
 ## MODEL
 student:
-  arch: vit_large
+  arch: vit_base
   in_chans: 1
   patch_size: 16
   drop_path_rate: 0.3
