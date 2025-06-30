@@ -271,7 +271,6 @@ class SSLMetaArch(nn.Module):
         )
 
         inputs_for_student_head_list = []
-
         # 1a: local crops cls tokens
         student_local_cls_tokens = student_local_backbone_output_dict["x_norm_clstoken"]
         inputs_for_student_head_list.append(student_local_cls_tokens.unsqueeze(0))

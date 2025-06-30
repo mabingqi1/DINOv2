@@ -472,7 +472,7 @@ class SwinTransformer(nn.Module):
         ret = self.forward_features(*args, **kwargs)
         return ret
 
-def swin_large(img_size=256, patch_size=16, in_chans=1, num_register_tokens=0, **kwargs):
+def swin_base(img_size=256, patch_size=4, in_chans=1, init_values=None):
     model = SwinTransformer(
         img_size=img_size,
         patch_size=patch_size,
@@ -484,6 +484,29 @@ def swin_large(img_size=256, patch_size=16, in_chans=1, num_register_tokens=0, *
     )
     return model
 
+def swin_base(img_size=256, patch_size=4, in_chans=1, init_values=None):
+    model = SwinTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=in_chans,
+        embed_dim=128, 
+        depths=(2, 2, 18, 2),
+        num_heads=(4, 8, 16, 32),
+        window_size=8,
+    )
+    return model
+
+def swin_large(img_size=256, patch_size=4, in_chans=1, init_values=None):
+    model = SwinTransformer(
+        img_size=img_size,
+        patch_size=patch_size,
+        in_chans=in_chans,
+        embed_dim=192, 
+        depths=(2, 2, 18, 2),
+        num_heads=(6, 12, 24, 48),
+        window_size=8,
+    )
+    return model
 
 
 # import torch

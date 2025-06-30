@@ -1,5 +1,5 @@
 train:
-  batch_size_per_gpu: 4
+  batch_size_per_gpu: 24
   dataset_path: /yinghepool/yinghe/datalist/v0.9/v0.9.1-CT-chest-ProjectX-2d.json
   output_dir: .
   saveckp_freq: 20
@@ -13,7 +13,7 @@ evaluation:
 optim:
   epochs: 100
   weight_decay: 0.005
-  weight_decay_end: 0.1
+  weight_decay_end: 0.05
   base_lr: 0.002  # learning rate for a batch size of 1024
   lr: 0.  # will be set after applying scaling rule
   warmup_epochs: 10
@@ -41,7 +41,7 @@ crops:
 
 ## MODEL
 student:
-  arch: swin_large
+  arch: swin_base
   in_chans: 1
   patch_size: 4
   block_chunks: 1
