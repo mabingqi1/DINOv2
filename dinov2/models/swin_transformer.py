@@ -397,16 +397,16 @@ class SwinTransformer(nn.Module):
             x = x.reshape(embed_x.shape)
         return x
     
-    def forward_intermediates(
+    def get_intermediate_layers(
             self, x: torch.Tensor,
-            indices: Optional[Union[int, List[int]]] = None,
+            n: Optional[Union[int, List[int]]] = None,
             norm: bool = False,
             intermediates_only: bool = True,
             output_fmt: str = 'NCHW',
     ) -> Union[List[torch.Tensor], Tuple[torch.Tensor, List[torch.Tensor]]]:
         assert output_fmt in ('NCHW', 'NHWC'), 'Output shape must be NCHW or NHWC.'
         intermediates = []
-        take_indices, max_index = feature_take_indices(len(self.layers), indices)
+        take_indices, max_index = feature_take_indices(len(self.layers), n)
         
         x = self.patch_embed(x)
         
