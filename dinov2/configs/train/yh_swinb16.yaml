@@ -1,6 +1,6 @@
 train:
-  batch_size_per_gpu: 24
-  dataset_path: /yinghepool/yinghe/datalist/v0.9/v0.9.1-CT-chest-ProjectX-2d.json
+  batch_size_per_gpu: 4
+  dataset_path: /yinghepool/yinghe2/data_manage_dataset/sk-yinghe/wushu-test-20250702_6/train_dataset_2d.json
   output_dir: .
   saveckp_freq: 20
   seed: 0
@@ -43,7 +43,7 @@ crops:
 student:
   arch: swin_base
   in_chans: 1
-  patch_size: 4
+  patch_size: 8
   block_chunks: 1
 teacher:
   momentum_teacher: 0.992

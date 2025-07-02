@@ -400,7 +400,7 @@ class SwinTransformer(nn.Module):
     def get_intermediate_layers(
             self, x: torch.Tensor,
             n: Optional[Union[int, List[int]]] = None,
-            norm: bool = False,
+            norm: bool = True,
             intermediates_only: bool = True,
             output_fmt: str = 'NCHW',
     ) -> Union[List[torch.Tensor], Tuple[torch.Tensor, List[torch.Tensor]]]:
@@ -484,7 +484,7 @@ def swin_base(img_size=256, patch_size=4, in_chans=1, init_values=None):
     )
     return model
 
-def swin_base(img_size=256, patch_size=4, in_chans=1, init_values=None):
+def swin_base(img_size=256, patch_size=4, in_chans=1, init_values=None, **kwargs):
     model = SwinTransformer(
         img_size=img_size,
         patch_size=patch_size,
@@ -496,7 +496,7 @@ def swin_base(img_size=256, patch_size=4, in_chans=1, init_values=None):
     )
     return model
 
-def swin_large(img_size=256, patch_size=4, in_chans=1, init_values=None):
+def swin_large(img_size=256, patch_size=4, in_chans=1, init_values=None, **kwargs):
     model = SwinTransformer(
         img_size=img_size,
         patch_size=patch_size,
